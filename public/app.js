@@ -5,99 +5,7 @@
 
 'use strict';
 
-const API_BASE = '/api/tasks';
-
-// ── API DATA LAYER ───────────────────────────────────────────
-const DB = {
-  // READ — fetch tasks with filters
-  async find(filter = {}) {
-    try {
-      const params = new URLSearchParams();
-      if (filter.status)   params.append('status', filter.status);
-      if (filter.priority) params.append('priority', filter.priority);
-      if (filter.search)   params.append('search', filter.search);
-
-      const res = await fetch(`${API_BASE}?${params.toString()}`);
-      const json = await res.json();
-      return json.success ? json.data : [];
-    } catch (err) {
-      console.error('Fetch error:', err);
-      return [];
-    }
-  },
-
-  // CREATE — send new task to backend
-  async insert(task) {
-    try {
-      const res = await fetch(API_BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(task)
-      });
-      const json = await res.json();
-      return json.success ? json.data : null;
-    } catch (err) {
-      console.error('Insert error:', err);
-      return null;
-    }
-  },
-
-  // UPDATE — patch existing task
-  async update(id, patch) {
-    try {
-      const res = await fetch(`${API_BASE}/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch)
-      });
-      return await res.json();
-    } catch (err) {
-      console.error('Update error:', err);
-    }
-  },
-
-  // TOGGLE — specialized route for completion toggle
-  async toggle(id) {
-    try {
-      const res = await fetch(`${API_BASE}/${id}/toggle`, { method: 'PATCH' });
-      return await res.json();
-    } catch (err) {
-      console.error('Toggle error:', err);
-    }
-  },
-
-  // DELETE — remove task
-  async delete(id) {
-    try {
-      const res = await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
-      return await res.json();
-    } catch (err) {
-      console.error('Delete error:', err);
-    }
-  },
-
-  // BULK DELETE — remove completed
-  async clearCompleted() {
-    try {
-      const res = await fetch(`${API_BASE}/completed/all`, { method: 'DELETE' });
-      return await res.json();
-    } catch (err) {
-      console.error('Clear error:', err);
-    }
-  },
-
-  // STATS — get summary from dashboard
-  async getStats() {
-    try {
-      const res = await fetch(`${API_BASE}/stats/summary`);
-      const json = await res.json();
-      return json.success ? json.data : null;
-    } catch (err) {
-      console.error('Stats error:', err);
-      return null;
-    }
-  }
-};
+const API_BASE = 'https://taskr-api.onrender.com/api';
 
 // ── APPLICATION STATE ─────────────────────────────────────────
 let currentFilter = 'all';
@@ -142,13 +50,20 @@ async function render() {
   const list  = document.getElementById('task-list');
   const empty = document.getElementById('empty-state');
 
-  const filter = {};
-  if (currentFilter === 'active')    filter.status   = 'active';
-  else if (currentFilter === 'completed') filter.status = 'completed';
-  else if (['high', 'medium', 'low'].includes(currentFilter)) filter.priority = currentFilter;
-  if (searchQuery) filter.search = searchQuery;
+  const params = new URLSearchParams();
+  if (currentFilter === 'active')    params.append('status', 'active');
+  else if (currentFilter === 'completed') params.append('status', 'completed');
+  else if (['high', 'medium', 'low'].includes(currentFilter)) params.append('priority', currentFilter);
+  if (searchQuery) params.append('search', searchQuery);
 
-  const tasks = await DB.find(filter);
+  let tasks = [];
+  try {
+    const res = await fetch(`${API_BASE}/tasks?${params.toString()}`);
+    const json = await res.json();
+    tasks = json.success ? json.data : [];
+  } catch (err) {
+    console.error('Fetch error:', err);
+  }
 
   list.innerHTML = '';
   empty.classList.toggle('show', tasks.length === 0);
@@ -213,8 +128,14 @@ async function render() {
 
 // ── STATS UPDATE ──────────────────────────────────────────────
 async function updateStats() {
-  const stats = await DB.getStats();
-  if (!stats) return;
+  let stats = null;
+  try {
+    const res = await fetch(`${API_BASE}/tasks/stats/summary`);
+    const json = await res.json();
+    stats = json.success ? json.data : null;
+  } catch (err) {
+    console.error('Stats error:', err);
+  }
 
   document.getElementById('stat-total').textContent  = stats.total;
   document.getElementById('s-active').textContent    = stats.active;
@@ -238,7 +159,18 @@ async function addTask() {
     category: document.getElementById('cat-select').value
   };
 
-  const saved = await DB.insert(newTask);
+  let saved = null;
+  try {
+    const res = await fetch(`${API_BASE}/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newTask)
+    });
+    const json = await res.json();
+    saved = json.success ? json.data : null;
+  } catch (err) {
+    console.error('Insert error:', err);
+  }
   if (saved) {
     titleInput.value = '';
     document.getElementById('desc-input').value = '';
@@ -249,7 +181,13 @@ async function addTask() {
 
 // UPDATE — toggle complete/active
 async function toggleTask(id) {
-  const res = await DB.toggle(id);
+  let res = null;
+  try {
+    const response = await fetch(`${API_BASE}/tasks/${id}/toggle`, { method: 'PATCH' });
+    res = await response.json();
+  } catch (err) {
+    console.error('Toggle error:', err);
+  }
   if (res && res.success) {
     toast(res.data.completed ? '// MARKED DONE' : '// MARKED ACTIVE');
     render();
@@ -261,12 +199,22 @@ async function saveEdit(id) {
   const title = document.getElementById('et-' + id).value.trim();
   if (!title) return;
 
-  const res = await DB.update(id, {
-    title,
-    desc:     document.getElementById('ed-' + id).value.trim(),
-    priority: document.getElementById('ep-' + id).value,
-    category: document.getElementById('ec-' + id).value
-  });
+  let res = null;
+  try {
+    const response = await fetch(`${API_BASE}/tasks/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        desc:     document.getElementById('ed-' + id).value.trim(),
+        priority: document.getElementById('ep-' + id).value,
+        category: document.getElementById('ec-' + id).value
+      })
+    });
+    res = await response.json();
+  } catch (err) {
+    console.error('Update error:', err);
+  }
 
   if (res && res.success) {
     toast('// TASK UPDATED');
@@ -276,7 +224,13 @@ async function saveEdit(id) {
 
 // DELETE
 async function deleteTask(id) {
-  const res = await DB.delete(id);
+  let res = null;
+  try {
+    const response = await fetch(`${API_BASE}/tasks/${id}`, { method: 'DELETE' });
+    res = await response.json();
+  } catch (err) {
+    console.error('Delete error:', err);
+  }
   if (res && res.success) {
     toast('// TASK DELETED');
     render();
@@ -323,7 +277,13 @@ document.getElementById('search-input').addEventListener('input', e => {
 });
 
 document.getElementById('clear-completed').addEventListener('click', async () => {
-  const res = await DB.clearCompleted();
+  let res = null;
+  try {
+    const response = await fetch(`${API_BASE}/tasks/completed/all`, { method: 'DELETE' });
+    res = await response.json();
+  } catch (err) {
+    console.error('Clear error:', err);
+  }
   if (res && res.success) {
     toast('// COMPLETED TASKS CLEARED');
     render();
