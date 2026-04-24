@@ -5,7 +5,7 @@
 
 'use strict';
 
-const API_BASE = 'https://taskr-api.onrender.com/api';
+const API_BASE = '/api';
 
 // ── APPLICATION STATE ─────────────────────────────────────────
 let currentFilter = 'all';
